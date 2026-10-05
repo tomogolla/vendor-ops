@@ -1,0 +1,21 @@
+[Unit]
+Description=Vendor Ops Django API
+After=network.target
+
+[Service]
+User=vendorops
+Group=vendorops
+WorkingDirectory=/opt/vendorops/app/backend
+EnvironmentFile=/etc/vendorops/backend.env
+ExecStart=/opt/vendorops/venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 2 --timeout 60 --access-logfile - --error-logfile -
+Restart=on-failure
+RestartSec=5
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/vendorops
+
+[Install]
+WantedBy=multi-user.target

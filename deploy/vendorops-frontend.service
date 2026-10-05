@@ -1,0 +1,20 @@
+[Unit]
+Description=Vendor Ops SvelteKit
+After=network.target vendorops-backend.service
+Wants=vendorops-backend.service
+
+[Service]
+User=vendorops
+Group=vendorops
+WorkingDirectory=/opt/vendorops/app/frontend/vendorops
+EnvironmentFile=/etc/vendorops/frontend.env
+ExecStart=/usr/bin/node build
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

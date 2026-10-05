@@ -1,0 +1,84 @@
+name: Test and deploy
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Backend tests and migration check
+        working-directory: backend
+        env:
+          DEBUG: 'true'
+          DATABASE_PATH: /tmp/vendorops-ci.sqlite3
+        run: |
+          python -m pip install -r requirements.txt
+          python manage.py check
+          python manage.py makemigrations --check --dry-run
+          python manage.py test
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Frontend checks and build
+        working-directory: frontend/vendorops
+        run: |
+          npm ci
+          npm run check
+          npm run build
+      - name: Validate deployment scripts
+        run: bash -n deploy/install.sh deploy/ci-deploy.sh
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request' && vars.ENABLE_DEPLOY == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production
+    concurrency:
+      group: vendorops-production
+      cancel-in-progress: false
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      APP_URL: ${{ vars.APP_URL }}
+      RELEASE_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Configure SSH
+        run: |
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_KEY"
+          test -n "$KNOWN_HOSTS"
+          [[ "$APP_URL" == https://* ]]
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
+      - name: Upload committed source and deploy
+        run: |
+          git archive --format=tar.gz --output=/tmp/vendorops-release.tar.gz HEAD backend frontend/vendorops deploy
+          scp -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -i ~/.ssh/deploy_key /tmp/vendorops-release.tar.gz "root@$DEPLOY_HOST:/root/vendorops-$RELEASE_SHA.tar.gz"
+          ssh -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -i ~/.ssh/deploy_key "root@$DEPLOY_HOST" "install -d -m 755 /opt/vendorops/incoming/$RELEASE_SHA && tar -xzf /root/vendorops-$RELEASE_SHA.tar.gz -C /opt/vendorops/incoming/$RELEASE_SHA && bash /opt/vendorops/incoming/$RELEASE_SHA/deploy/ci-deploy.sh $RELEASE_SHA"
+      - name: Check public HTTPS login page
+        run: curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors --connect-timeout 10 --max-time 30 "${APP_URL%/}/login" --output /dev/null
+      - name: Remove runner SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
