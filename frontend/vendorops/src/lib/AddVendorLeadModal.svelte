@@ -1,6 +1,8 @@
 <script lang="ts">
   import { tick, onMount } from "svelte";
   import VendorQuestionnaire from "$lib/VendorQuestionnaire.svelte";
+  import WeekendMultiSelect from "$lib/WeekendMultiSelect.svelte";
+  import { agreedWeekendOptions } from "$lib/vendor-questionnaire";
   import { enhance } from "$app/forms";
   import { resolve } from "$app/paths";
   import type { SubmitFunction } from "@sveltejs/kit";
@@ -33,7 +35,13 @@
     followup = initial.next_followup ? localDate(initial.next_followup) : '';
   });
   let saving = $state(false);
+  let formRevision = $state(0);
   let errors = $state<Record<string, string[]>>({});
+  function errorMessages(value: unknown): string[] {
+    if (typeof value === 'string') return [value];
+    if (value && typeof value === 'object') return Object.values(value).flatMap(errorMessages);
+    return [];
+  }
   let followup = $state("");
   const contacts = [
     {
@@ -101,13 +109,14 @@
           await update({ reset: !inline });
           if (!inline) {
             followup = "";
+            if (!edit) formRevision += 1;
             dialog?.close();
           }
           onsaved();
         } else if (result.type === "failure") {
-          errors = (result.data?.errors as Record<string, string[]>) ?? {
-            non_field_errors: ["Unable to save the lead."],
-          };
+          errors = result.data?.errors
+            ? Object.fromEntries(Object.entries(result.data.errors).map(([field, value]) => [field, errorMessages(value)]))
+            : { non_field_errors: ["Unable to save the lead."] };
         } else {
           errors = {
             non_field_errors: ["Unable to save the lead. Please try again."],
@@ -161,10 +170,13 @@
         </ul>
       </div>
     {/if}
+    {#key formRevision}
     <fieldset disabled={saving}>
-      <legend>1. Call Header &amp; Lead Details</legend>
+      <legend>Vendor call questionnaire</legend>
+      <VendorQuestionnaire {errors} {initial} />
+      <h3>CRM record details</h3>
       <div class="fields">
-        {#each contacts as field}
+        {#each contacts.filter((field) => ['first_name', 'last_name'].includes(field.name)) as field}
           <label for={field.name}>
             {field.label}{field.name === "business_name" ? " *" : ""}
             <input
@@ -180,7 +192,7 @@
           </label>
         {/each}
         <label for="vendor_category"
-          >Vendor category *
+          >CRM category *
           <select
             id="vendor_category"
             name="vendor_category"
@@ -223,10 +235,14 @@
           </select>
         </label>
       </div>
-      <VendorQuestionnaire {errors} {initial} />
       <div class="fields followup-fields">
+        <div class="full-width">
+          <span id="agreed-weekends-label">Confirmed booking weekends</span>
+          <p class="hint">Select the weekends to include in the approval invoice and market schedule. Target market dates above are requests.</p>
+          <WeekendMultiSelect name="agreed_weekend_dates" options={agreedWeekendOptions} initial={initial?.agreed_weekend_dates ?? ''} labelId="agreed-weekends-label" invalid={Boolean(errors.agreed_weekend_dates)} />
+        </div>
         <label for="next_followup"
-          >Next follow-up date and time
+          >Follow-up reminder date and time (optional)
           <input
             id="next_followup"
             name="next_followup"
@@ -236,20 +252,9 @@
           />
           <span class="hint">Your local timezone</span>
         </label>
-        <label class="full-width" for="notes"
-          >Additional Rep Notes / Observations
-          <textarea
-            id="notes"
-            name="notes"
-            rows="4"
-            maxlength="10000"
-            placeholder="What did you discuss? Include interests and next steps."
-            value={initial?.notes ?? ''}
-            aria-invalid={errors.notes ? "true" : undefined}
-          ></textarea>
-        </label>
       </div>
     </fieldset>
+    {/key}
     <div class="actions">
       {#if !inline}<button type="button" disabled={saving} onclick={() => dialog?.close()}
         >Cancel</button
@@ -338,8 +343,7 @@
     min-width: 0;
   }
   input,
-  select,
-  textarea {
+  select {
     box-sizing: border-box;
     width: 100%;
     border: 1px solid #99b7f5;
@@ -349,9 +353,6 @@
     color: #20352f;
     font: inherit;
     font-weight: 400;
-  }
-  textarea {
-    resize: vertical;
   }
   .full-width {
     grid-column: 1 / -1;
@@ -384,7 +385,6 @@
   }
   input:focus-visible,
   select:focus-visible,
-  textarea:focus-visible,
   button:focus-visible {
     outline: 2px solid #37795e;
     outline-offset: 2px;

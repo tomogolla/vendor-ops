@@ -1,10 +1,11 @@
 export type Question = {
   name: string;
   label: string;
-  type: 'text' | 'textarea' | 'select' | 'multi-select' | 'datetime-local' | 'checkbox';
+  type: 'text' | 'textarea' | 'select' | 'multi-select' | 'datetime-local' | 'checkbox' | 'email' | 'tel' | 'url' | 'number' | 'date' | 'checkbox-group' | 'multi-date';
   options?: readonly string[];
   description?: string;
   max?: number;
+  required?: boolean;
 };
 export type QuestionSection = { title: string; description?: string; questions: Question[] };
 
@@ -24,6 +25,251 @@ export const agreedWeekendOptions = [
 ] as const;
 
 export const questionnaire: QuestionSection[] = [
+  {
+    "title": "1. Core Brand & Contact Verification",
+    "description": "Verify or update the lead’s basic contact details.",
+    "questions": [
+      {
+        "name": "business_name",
+        "label": "Brand Name",
+        "type": "text",
+        "max": 200,
+        "required": true,
+        "description": "Can you confirm your brand name?"
+      },
+      {
+        "name": "vendor_contact_name",
+        "label": "Contact Name",
+        "type": "text",
+        "max": 200,
+        "description": "Who is the best point of contact for all market operations?"
+      },
+      {
+        "name": "phone_number",
+        "label": "Phone Number",
+        "type": "tel",
+        "max": 40,
+        "description": "What is the best direct phone number for billing and market-day updates?"
+      },
+      {
+        "name": "email",
+        "label": "Email Address",
+        "type": "email",
+        "max": 254,
+        "description": "What is the best email address for billing and market-day updates?"
+      },
+      {
+        "name": "website_url",
+        "label": "Website URL",
+        "type": "url",
+        "max": 2048,
+        "description": "Where can we review your current catalog?"
+      },
+      {
+        "name": "instagram_handle",
+        "label": "Instagram Handle",
+        "type": "text",
+        "max": 31,
+        "description": "What is your Instagram handle?"
+      }
+    ]
+  },
+  {
+    "title": "2. Product & Brand Qualification",
+    "questions": [
+      {
+        "name": "product_category",
+        "label": "Product Category",
+        "type": "select",
+        "options": [
+          "Apparel/Fashion",
+          "Jewelry & Accessories",
+          "Beauty & Wellness",
+          "Home Goods",
+          "Vintage/Thrift",
+          "Art & Craft",
+          "Pre-Packaged Food",
+          "Other"
+        ],
+        "description": "How would you categorize the products you plan to sell with us?"
+      },
+      {
+        "name": "price_point_range",
+        "label": "Price Point Range",
+        "type": "text",
+        "max": 200,
+        "description": "What is your typical product price point range (e.g., $15–$50, $50–$150)?"
+      },
+      {
+        "name": "brand_description_aesthetic",
+        "label": "Brand Description & Aesthetic",
+        "type": "textarea",
+        "description": "How would you describe your brand aesthetic and visual setup?"
+      },
+      {
+        "name": "readiness_level",
+        "label": "Readiness Level",
+        "type": "select",
+        "options": [
+          "Ready Now",
+          "Needs 1–2 Weeks",
+          "Exploring Options"
+        ],
+        "description": "Do you have your booth display, point-of-sale system, and inventory fully prepared for an upcoming weekend?"
+      }
+    ]
+  },
+  {
+    "title": "3. Market Logistics & Setup Needs",
+    "questions": [
+      {
+        "name": "previous_market_experience",
+        "label": "Previous Market Experience",
+        "type": "select",
+        "options": [
+          "First-Time Vendor",
+          "Experienced Pop-Up Vendor",
+          "Returning Good Flea Vendor"
+        ],
+        "description": "Have you participated in weekend pop-up markets in Downtown NYC before, or will this be your first time?"
+      },
+      {
+        "name": "equipment_needs",
+        "label": "Equipment & Electricity Needs",
+        "type": "checkbox-group",
+        "options": [
+          "Standard Space",
+          "Table Needed",
+          "Rack Space",
+          "Electricity Access"
+        ],
+        "description": "What booth size or equipment rental will you require for your setup?"
+      },
+      {
+        "name": "operational_placement_notes",
+        "label": "Operational / Placement Notes",
+        "type": "textarea",
+        "description": "Do you have any unique setup requirements or neighbor positioning preferences we should record for the Market Manager?"
+      }
+    ]
+  },
+  {
+    "title": "4. Commercial Terms & Date Selection",
+    "questions": [
+      {
+        "name": "target_market_dates",
+        "label": "Target Market Dates",
+        "type": "multi-date",
+        "description": "Which upcoming weekend dates are you looking to participate in? Add each requested calendar date. These are requests; confirmed bookings remain in Market Weekends."
+      },
+      {
+        "name": "booking_type",
+        "label": "Booking Type",
+        "type": "select",
+        "options": [
+          "Single Weekend",
+          "Multi-Weekend Package",
+          "Recurring Seasonal Vendor"
+        ],
+        "description": "Are you open to reserving multiple weekend dates across the quarter to secure continuous vendor presence and locked-in rates?"
+      },
+      {
+        "name": "agreed_pricing",
+        "label": "Agreed Pricing ($)",
+        "type": "number",
+        "description": "Record the agreed rate in USD. Include discounts or per-date pricing details in Call Summary & Notes."
+      },
+      {
+        "name": "invoice_email",
+        "label": "Invoice Email",
+        "type": "email",
+        "max": 254,
+        "description": "Based on your selected dates and footprint, we agreed on [Rate/Discount]. Should we send the Shopify invoice directly to your primary email? Record the confirmed billing email."
+      }
+    ]
+  },
+  {
+    "title": "5. Expectations, Feedback & Objection Handling",
+    "questions": [
+      {
+        "name": "primary_vendor_goal",
+        "label": "Primary Vendor Goal",
+        "type": "select",
+        "options": [
+          "High Sales Volume",
+          "Brand Awareness",
+          "Product Testing",
+          "Content Creation"
+        ],
+        "description": "What is your top priority for joining The Good Flea?"
+      },
+      {
+        "name": "objections_concerns",
+        "label": "Objections / Concerns Raised",
+        "type": "textarea",
+        "description": "What main questions or hesitations do you have about foot traffic, load-in, or booth layout before locking in your spot?"
+      },
+      {
+        "name": "historical_vendor_feedback",
+        "label": "Historical Vendor Feedback",
+        "type": "textarea",
+        "description": "If returning: how was your experience during your last market with us, and is there anything operational we can adjust for your next booking?"
+      }
+    ]
+  },
+  {
+    "title": "6. Representative Call Outcome & Handoff",
+    "description": "Complete after the call. Pipeline selections record the representative’s assessment; invoice and payment actions remain separate.",
+    "questions": [
+      {
+        "name": "lead_qualification",
+        "label": "Lead Qualification",
+        "type": "select",
+        "options": [
+          "Qualified & Ready",
+          "Needs Follow-Up",
+          "Deferred",
+          "Not a Fit"
+        ]
+      },
+      {
+        "name": "vendor_pipeline_stage",
+        "label": "Vendor Pipeline Stage",
+        "type": "select",
+        "options": [
+          "Call Completed -> Pending Invoice",
+          "Invoice Sent -> Awaiting Payment",
+          "Booked & Paid",
+          "Closed / Rejected"
+        ]
+      },
+      {
+        "name": "next_action_required",
+        "label": "Next Action Required",
+        "type": "select",
+        "options": [
+          "Send Shopify Draft Invoice",
+          "Send Follow-Up Email",
+          "Schedule Second Call",
+          "Pass to Market Ops"
+        ]
+      },
+      {
+        "name": "next_followup_date",
+        "label": "Next Follow-Up Date",
+        "type": "date"
+      },
+      {
+        "name": "notes",
+        "label": "Call Summary & Notes",
+        "type": "textarea",
+        "description": "Capture specific promises made, agreed discounts, and operational handoff notes."
+      }
+    ]
+  }
+];
+
+export const legacyQuestionnaire: QuestionSection[] = [
   {
     title: '1. Call Header & Lead Details',
     questions: [

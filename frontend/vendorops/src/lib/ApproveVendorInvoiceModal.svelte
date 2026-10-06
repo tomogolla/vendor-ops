@@ -57,14 +57,14 @@
   <form method="POST" action="?/approveInvoice" use:enhance={submit}>
     <div class="summary">
       <div><span>From</span><strong>booking@thegoodflea.com</strong></div>
-      <div><span>To</span><strong>{lead.email || 'No vendor email on file'}</strong></div>
+      <div><span>To</span><strong>{lead.invoice_email || lead.email || 'No vendor email on file'}</strong></div>
       <div><span>Business</span><strong>{lead.business_name}</strong></div>
       <div><span>Agreed weekends</span><strong>{lead.agreed_weekend_dates ? lead.agreed_weekend_dates.replaceAll(' | ', ', ') : 'To be confirmed'}</strong></div>
     </div>
     <fieldset disabled={sending}>
       <div class="fields">
         <label for="invoice-amount">Invoice amount (USD) *
-          <input id="invoice-amount" name="amount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" required aria-invalid={errors.amount ? 'true' : undefined} />
+          <input id="invoice-amount" name="amount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" value={lead.agreed_pricing ?? ''} required aria-invalid={errors.amount ? 'true' : undefined} />
         </label>
         <label for="invoice-due">Due date *
           <input id="invoice-due" name="due_date" type="date" required aria-invalid={errors.due_date ? 'true' : undefined} />
@@ -77,7 +77,7 @@
     <p class="send-note">An invoice number is assigned when the email is sent. The approval is saved only if the mail backend reports success.</p>
     <div class="actions">
       <button type="button" disabled={sending} onclick={() => dialog?.close()}>Cancel</button>
-      <button class="send" type="submit" disabled={sending || !lead.email}>{sending ? 'Sending…' : 'Send invoice & approve'}</button>
+      <button class="send" type="submit" disabled={sending || !(lead.invoice_email || lead.email)}>{sending ? 'Sending…' : 'Send invoice & approve'}</button>
     </div>
   </form>
 </dialog>

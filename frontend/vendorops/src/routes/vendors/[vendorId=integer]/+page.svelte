@@ -3,6 +3,7 @@
   import { resolve } from "$app/paths";
   import type { SubmitFunction } from "@sveltejs/kit";
   import AddVendorLeadModal from "$lib/AddVendorLeadModal.svelte";
+  import VendorQuestionnaireAnswers from "$lib/VendorQuestionnaireAnswers.svelte";
   import ApproveVendorInvoiceModal from "$lib/ApproveVendorInvoiceModal.svelte";
   import VendorEmailSequenceModal from "$lib/VendorEmailSequenceModal.svelte";
   import { vendorEmailTemplates } from "$lib/vendor-email-templates";
@@ -137,7 +138,7 @@
       </div>
       <div>
         <dt>About brand</dt>
-        <dd>{data.lead.notes || "—"}</dd>
+        <dd>{data.lead.brand_description_aesthetic || data.lead.notes || "—"}</dd>
       </div>
       <div>
         <dt>Call outcome</dt>
@@ -162,7 +163,7 @@
       <div>
         <dt>Requested dates</dt>
         <dd>
-          {data.lead.agreed_weekend_dates
+          {data.lead.target_market_dates?.length ? data.lead.target_market_dates.join(', ') : data.lead.agreed_weekend_dates
             ? data.lead.agreed_weekend_dates.replaceAll(" | ", ", ")
             : "—"}
         </dd>
@@ -174,6 +175,7 @@
         </dd>
       </div>
     </dl>
+    <VendorQuestionnaireAnswers lead={data.lead} localTime={mounted} />
   </section>
 
   <aside class="review-column" aria-label="Application review">
@@ -217,12 +219,12 @@
       <button
         class="primary"
         type="button"
-        disabled={!!data.invoice || !data.lead.email}
+        disabled={!!data.invoice || !(data.lead.invoice_email || data.lead.email)}
         onclick={() => invoiceModal.open()}
       >
         {data.invoice ? "Approved · invoice sent" : "Accept application"}
       </button>
-      {#if !data.lead.email}<p class="muted email-required">
+      {#if !(data.lead.invoice_email || data.lead.email)}<p class="muted email-required">
           Add a vendor email before approval.
         </p>{/if}
       <form method="POST" action="?/update" use:enhance={save}>

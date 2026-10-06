@@ -83,14 +83,15 @@ class ApproveAndSendInvoice(APIView):
             lead = get_object_or_404(VendorLead.objects.select_for_update(), pk=pk)
             if ApprovalInvoice.objects.filter(lead=lead).exists():
                 return Response({'non_field_errors': ['An approval invoice has already been sent for this vendor.']}, status=status.HTTP_409_CONFLICT)
+            recipient_email = lead.invoice_email or lead.email
             try:
-                validate_email(lead.email)
+                validate_email(recipient_email)
             except ValidationError:
                 return Response({'non_field_errors': ['Add a valid vendor email before sending an invoice.']}, status=status.HTTP_400_BAD_REQUEST)
 
             invoice = ApprovalInvoice.objects.create(
                 lead=lead,
-                recipient_email=lead.email,
+                recipient_email=recipient_email,
                 amount=serializer.validated_data['amount'],
                 due_date=serializer.validated_data['due_date'],
                 payment_instructions='',

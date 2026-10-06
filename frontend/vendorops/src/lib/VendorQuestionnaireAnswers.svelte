@@ -1,11 +1,13 @@
 <script lang="ts">
-  import { questionnaire } from '$lib/vendor-questionnaire';
+  import { questionnaire, legacyQuestionnaire } from '$lib/vendor-questionnaire';
   import type { VendorLead } from '$lib/vendor-leads';
   let { lead, localTime = false }: { lead: VendorLead; localTime?: boolean } = $props();
   function answer(name: string) {
     const value = lead[name as keyof VendorLead];
     if (typeof value === 'boolean') return value ? 'Checked' : 'Not checked';
     if (value === '' || value == null) return 'Not answered';
+    if (Array.isArray(value)) return value.length ? value.join('\n') : 'Not answered';
+    if (name === 'agreed_pricing') return `$${value} USD`;
     if (name === 'call_at') return localTime ? new Date(String(value)).toLocaleString() : String(value);
     if (name === 'offer_interest') return `${value} / 5`;
     if (name === 'agreed_weekend_dates') return String(value).split(' | ').join('\n');
@@ -21,8 +23,13 @@
       {#each section.questions as question}<dt>{question.label}</dt><dd>{answer(question.name)}</dd>{/each}
     </dl>
   {/each}
-  <p><strong>Additional Rep Notes / Observations</strong></p>
-  <p>{lead.notes || 'Not answered'}</p>
+  <details>
+    <summary>Previous call questionnaire answers</summary>
+    {#each legacyQuestionnaire as section}
+      <h3>{section.title}</h3>
+      <dl>{#each section.questions as question}<dt>{question.label}</dt><dd>{answer(question.name)}</dd>{/each}</dl>
+    {/each}
+  </details>
 </details>
 
 <style>
