@@ -3,6 +3,7 @@
   import { resolve } from "$app/paths";
   import type { SubmitFunction } from "@sveltejs/kit";
   import AddVendorLeadModal from "$lib/AddVendorLeadModal.svelte";
+  import CreateInvoiceModal from "$lib/CreateInvoiceModal.svelte";
   import ApproveVendorInvoiceModal from "$lib/ApproveVendorInvoiceModal.svelte";
   import VendorEmailSequenceModal from "$lib/VendorEmailSequenceModal.svelte";
   import { vendorEmailTemplates } from "$lib/vendor-email-templates";
@@ -12,6 +13,7 @@
   let saving = $state(false);
   let notice = $state("");
   let saveError = $state("");
+  let createInvoiceModal: CreateInvoiceModal;
   let invoiceModal: ApproveVendorInvoiceModal;
   let sequenceEmailModal: VendorEmailSequenceModal;
   let editModal: AddVendorLeadModal;
@@ -218,7 +220,7 @@
         class="primary"
         type="button"
         disabled={!!data.invoice || !data.lead.email}
-        onclick={() => invoiceModal.open()}
+        onclick={() => createInvoiceModal.open()}
       >
         {data.invoice ? "Approved · invoice sent" : "Accept application"}
       </button>
@@ -289,6 +291,14 @@
   action="?/update"
   onsaved={() => {
     notice = "Vendor profile saved.";
+    saveError = "";
+  }}
+/>
+<CreateInvoiceModal
+  bind:this={createInvoiceModal}
+  lead={data.lead}
+  onsent={() => {
+    notice = "Invoice sent and vendor approved.";
     saveError = "";
   }}
 />
