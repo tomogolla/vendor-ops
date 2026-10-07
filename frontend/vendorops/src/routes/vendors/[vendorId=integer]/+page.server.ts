@@ -15,27 +15,7 @@ export const load: PageServerLoad = async ({ params, fetch }) => {
   return await response.json() as { lead: VendorLead; invoice: ApprovalInvoice | null; categories: string[]; sources: string[] };
 };
 
-type LineItem = {
-  id: number;
-  item_type: 'booth_size' | 'add_on' | 'discount';
-  description: string;
-  quantity: number;
-  unit_price: string;
-  subtotal: string;
-  booth_size?: number;
-  add_on?: number;
-  created_at: string;
-};
-
-type LifecycleEvent = {
-  id: number;
-  status: string;
-  created_at: string;
-  notes: string;
-};
-
 type ApprovalInvoice = {
-  id: number;
   number: string;
   recipient_email: string;
   amount: string;
@@ -43,13 +23,7 @@ type ApprovalInvoice = {
   due_date: string;
   invoice_link: string;
   weekend_dates: string;
-  sent_at: string | null;
-  status: 'draft' | 'sent' | 'cancelled' | 'paid';
-  subtotal: string;
-  discount_amount: string;
-  total_amount: string;
-  line_items?: LineItem[];
-  lifecycle_events?: LifecycleEvent[];
+  sent_at: string;
 };
 
 export const actions: Actions = {
