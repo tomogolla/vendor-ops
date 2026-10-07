@@ -6,6 +6,8 @@
   import CreateInvoiceModal from "$lib/CreateInvoiceModal.svelte";
   import ApproveVendorInvoiceModal from "$lib/ApproveVendorInvoiceModal.svelte";
   import VendorEmailSequenceModal from "$lib/VendorEmailSequenceModal.svelte";
+  import TabPanel from "$lib/TabPanel.svelte";
+  import InvoicesList from "$lib/InvoicesList.svelte";
   import { vendorEmailTemplates } from "$lib/vendor-email-templates";
   import type { PageData } from "./$types";
 
@@ -88,19 +90,29 @@
 {#if saveError}<p class="error" role="alert">{saveError}</p>{/if}
 
 <div class="profile-grid">
-  <section class="card application-card" aria-labelledby="application-title">
-    <div class="card-heading">
-      <h2 id="application-title">
-        SUBMITTED APPLICATION: {data.lead.business_name}
-      </h2>
-      <button
-        class="edit"
-        type="button"
-        aria-label="Edit vendor profile"
-        onclick={() => editModal.open()}>✎</button
-      >
-    </div>
-    <dl>
+  <section class="card application-card">
+    <TabPanel tabs={[
+      { id: 'overview', label: 'Overview' },
+      { id: 'invoices', label: 'Invoices' },
+      { id: 'communication', label: 'Communication' },
+      { id: 'documents', label: 'Documents & Contracts' },
+      { id: 'bookings', label: 'Bookings & Payments' },
+    ]} let:active>
+
+      {#if active === 'overview'}
+        <div class="tab-section">
+          <div class="card-heading">
+            <h2>
+              SUBMITTED APPLICATION: {data.lead.business_name}
+            </h2>
+            <button
+              class="edit"
+              type="button"
+              aria-label="Edit vendor profile"
+              onclick={() => editModal.open()}>✎</button
+            >
+          </div>
+          <dl>
       <div>
         <dt>Business name</dt>
         <dd>{data.lead.business_name}</dd>
@@ -176,6 +188,55 @@
         </dd>
       </div>
     </dl>
+        </div>
+      {/if}
+
+      {#if active === 'invoices'}
+        <div class="tab-section">
+          <InvoicesList lead={data.lead} />
+        </div>
+      {/if}
+
+      {#if active === 'communication'}
+        <div class="tab-section">
+          <p class="empty-state">Communication history will appear here.</p>
+        </div>
+      {/if}
+
+      {#if active === 'documents'}
+        <div class="tab-section">
+          {#key data.lead.id}
+            <form method="POST" action="?/update" use:enhance={save}>
+              <input type="hidden" name="section" value="documents" />
+              <fieldset disabled={saving}>
+                <div class="documents-checklist">
+                  {#each documents as document}
+                    <label class="check">
+                      <input
+                        type="checkbox"
+                        name={document.name}
+                        checked={data.lead[document.name]}
+                      />
+                      {document.label}
+                    </label>
+                  {/each}
+                </div>
+                <button class="secondary save-documents" type="submit">
+                  {saving ? 'Saving…' : 'Save checklist'}
+                </button>
+              </fieldset>
+            </form>
+          {/key}
+        </div>
+      {/if}
+
+      {#if active === 'bookings'}
+        <div class="tab-section">
+          <p class="empty-state">Booking and payment information will appear here.</p>
+        </div>
+      {/if}
+
+    </TabPanel>
   </section>
 
   <aside class="review-column" aria-label="Application review">
@@ -258,27 +319,6 @@
       {/if}
     </section>
 
-    <section class="card">
-      <h2>DOCUMENT CHECKLIST</h2>
-      {#key data.lead.id}
-        <form method="POST" action="?/update" use:enhance={save}>
-          <input type="hidden" name="section" value="documents" />
-          <fieldset disabled={saving}>
-            {#each documents as document}<label class="check"
-                ><input
-                  type="checkbox"
-                  name={document.name}
-                  checked={data.lead[document.name]}
-                />{document.label}</label
-              >{/each}
-            <button class="secondary save-documents" type="submit"
-              >{saving ? "Saving…" : "Save checklist"}</button
-            >
-          </fieldset>
-        </form>
-      {/key}
-    </section>
-    
   </aside>
 </div>
 
@@ -566,6 +606,23 @@
   .error {
     background: #fff0ed;
     color: #922218;
+  }
+  .tab-section {
+    animation: fadeIn 0.15s ease-in;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  .empty-state {
+    text-align: center;
+    color: #818390;
+    padding: 40px 20px;
+    font-size: 13px;
+  }
+  .documents-checklist {
+    display: grid;
+    gap: 8px;
   }
   @media (max-width: 1000px) {
     .profile-grid {
