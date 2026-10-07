@@ -1,417 +1,237 @@
-# Deploy Vendor Ops to Ubuntu 24.04
+# Deploy Vendor Ops with PostgreSQL on Ubuntu 24.04
 
-Already deployed? Follow [the GitHub CI/CD setup guide](GITHUB_ACTIONS.md) to automate checks and deployments.
+The droplet runs Nginx, Django/Gunicorn and SvelteKit as native services. PostgreSQL runs natively on **127.0.0.1:5432**. GitHub Actions uses a disposable PostgreSQL service container for tests; the droplet does not require Docker.
 
-Follow these steps in order. If a command fails, stop and save the error before continuing. This uses Nginx and systemd without Docker.
+For automated deployment, see [GITHUB_ACTIONS.md](GITHUB_ACTIONS.md).
 
-## Before you start
+**Windows PowerShell** means your local terminal. **Droplet** means an SSH terminal logged in as root (or run sudo -i first). Replace app.example.com with your actual hostname and confirm 162.243.224.95 is your droplet.
 
-**Windows PowerShell** means a terminal on your computer. **Droplet** means the Ubuntu terminal after connecting with SSH. Droplet commands assume you are root; if using another administrator account, run sudo -i first.
+## 1. Connect and install prerequisites
 
-Replace **ops.yourdomain.com** everywhere with your actual domain. Confirm **162.243.224.95** is the intended droplet in DigitalOcean. Keep the SSH terminal open and use a second Windows terminal for uploads.
+Windows PowerShell:
 
-The main steps create a fresh database. The optional import section copies existing data.
-
-Nginx receives HTTPS requests and forwards app traffic to SvelteKit on localhost port 3000. SvelteKit calls Django on localhost port 8000. Systemd starts both services after reboot and restarts them after crashes. The database lives outside the source folder.
-
-## 1. Connect to the droplet
-
-**Windows PowerShell:**
-
-~~~powershell
-ssh root@162.243.224.95
-~~~
-
-Verify the server fingerprint through a trusted source, such as the droplet console, before accepting a first connection. Success means you see an Ubuntu prompt like root@your-droplet:~#.
-
-Our earlier attempt returned Permission denied (publickey). If that happens, specify your existing private key:
-
-~~~powershell
-ssh -i "$env:USERPROFILE\.ssh\id_ed25519" root@162.243.224.95
-~~~
-
-Use your actual key path. If you have no key, create one at a new filename. Do not overwrite an existing key:
-
-~~~powershell
-ssh-keygen -t ed25519 -f "$env:USERPROFILE\.ssh\vendorops_ed25519"
-Get-Content "$env:USERPROFILE\.ssh\vendorops_ed25519.pub"
-~~~
-
-Copy the entire public-key line. Open the droplet's browser console in DigitalOcean, log in as root, and run:
-
-~~~sh
-mkdir -p /root/.ssh
-chmod 700 /root/.ssh
-nano /root/.ssh/authorized_keys
-~~~
-
-Paste the public key on a new line, preserving existing keys. In nano, save with **Ctrl+O**, **Enter**, then exit with **Ctrl+X**.
-
-~~~sh
-chmod 600 /root/.ssh/authorized_keys
-~~~
-
-Retry on Windows:
-
-~~~powershell
+```powershell
 ssh -i "$env:USERPROFILE\.ssh\vendorops_ed25519" root@162.243.224.95
-~~~
+```
 
-Adding a key to your DigitalOcean account alone does not install it on an existing droplet. Never share the private key. If SSH needs the -i option, add the same option to each scp command below.
+If SSH reports Permission denied (publickey), add the corresponding .pub public key to /root/.ssh/authorized_keys through DigitalOcean's console. Preserve existing keys; use directory mode 700 and file mode 600. Never share the private key.
 
-## 2. Point your domain to the droplet
+Droplet:
 
-At your domain's DNS provider, create:
-
-| Field | Value |
-| --- | --- |
-| Type | A |
-| Name / Host | ops for ops.yourdomain.com |
-| Value / Target | 162.243.224.95 |
-| TTL | Default |
-
-For a root domain, the name is usually @. Remove an incorrect AAAA record for this hostname, or configure the droplet's actual IPv6 address. For Cloudflare, use **DNS only** during initial setup.
-
-**Windows PowerShell:**
-
-~~~powershell
-Resolve-DnsName ops.yourdomain.com -Type A
-~~~
-
-Success: the answer contains your droplet IP. DNS changes may take time. Public DNS must be correct before HTTPS setup.
-
-## 3. Install server software
-
-**Droplet:**
-
-~~~sh
+```sh
 apt update
-apt install -y nginx python3-venv python3-pip sqlite3 certbot python3-certbot-nginx curl ca-certificates gnupg nano
-~~~
+apt install -y nginx python3-venv python3-pip postgresql postgresql-client libpq5 certbot python3-certbot-nginx curl ca-certificates gnupg nano
+systemctl enable --now postgresql
+pg_isready -h 127.0.0.1 -p 5432
+pg_dump --version
+```
 
-Install Node.js 24 from NodeSource. If other apps already run on this server, check their Node requirements before changing the installed version.
+Ubuntu 24.04 supplies PostgreSQL 16, matching CI. Use a pg_dump version at least as new as your server. If you installed another PostgreSQL version already, confirm versions before changing packages.
 
-~~~sh
+Install Node.js 24 if it is not already available:
+
+```sh
 curl -fsSL https://deb.nodesource.com/setup_24.x -o /tmp/vendorops-nodesource.sh
 bash /tmp/vendorops-nodesource.sh
 apt install -y nodejs
 node --version
-npm --version
-python3 --version
 command -v node
-~~~
+```
 
-Success: Node prints v24..., standard Ubuntu 24.04 Python prints 3.12..., and Node is at /usr/bin/node. The service expects that path. Ubuntu's older default Node package is insufficient for this frontend.
+The frontend service expects /usr/bin/node. Check other apps' requirements before changing an existing Node installation.
 
-## 4. Upload your app
+## 2. Create the production database and role
 
-**Droplet:**
+Droplet:
 
-~~~sh
+```sh
+sudo -u postgres psql
+```
+
+In the PostgreSQL prompt, run these individually:
+
+```sql
+CREATE ROLE vendorops LOGIN;
+\password vendorops
+CREATE DATABASE tgf_vendor_ops OWNER vendorops;
+\q
+```
+
+The password command prompts twice. Choose a strong password and record it privately for the environment file. The production role owns this database so Django can apply migrations; it does not need superuser or CREATEDB privileges. Skip CREATE commands for an existing role/database and verify ownership instead. Do not recreate or overwrite a database containing production data.
+
+Verify a real TCP login:
+
+```sh
+psql -h 127.0.0.1 -p 5432 -U vendorops -d tgf_vendor_ops -W -c 'SELECT current_database(), current_user;'
+```
+
+Success prints tgf_vendor_ops and vendorops. PostgreSQL's default loopback listener is sufficient. Keep port 5432 private; do not add a public firewall rule. If local password authentication is customized, configure pg_hba.conf for the vendorops role/database on 127.0.0.1/32 using scram-sha-256.
+
+## 3. Upload source
+
+Droplet:
+
+```sh
 mkdir -p /opt/vendorops/app
-~~~
+```
 
-**Windows PowerShell, in a second terminal:**
+Windows PowerShell:
 
-~~~powershell
+```powershell
 Set-Location "C:\Users\thoma\OneDrive\Desktop\projects\vendor-ops"
 tar -czf "$env:TEMP\vendorops-source.tar.gz" --exclude=.env --exclude='.env.*' --exclude=.venv --exclude=venv --exclude=node_modules --exclude=build --exclude=.svelte-kit --exclude=__pycache__ --exclude='*.sqlite3*' --exclude=staticfiles --exclude=media backend frontend/vendorops deploy
-scp "$env:TEMP\vendorops-source.tar.gz" root@162.243.224.95:/tmp/vendorops-source.tar.gz
-~~~
+scp -i "$env:USERPROFILE\.ssh\vendorops_ed25519" "$env:TEMP\vendorops-source.tar.gz" root@162.243.224.95:/tmp/vendorops-source.tar.gz
+```
 
-This uploads your current source, including uncommitted changes, excluding secrets, databases, and generated files.
+Droplet:
 
-**Droplet:**
-
-~~~sh
+```sh
 tar -xzf /tmp/vendorops-source.tar.gz -C /opt/vendorops/app
-ls /opt/vendorops/app
-sed -i 's/\r$//' /opt/vendorops/app/deploy/install.sh
-~~~
+sed -i 's/\r$//' /opt/vendorops/app/deploy/install.sh /opt/vendorops/app/deploy/ci-deploy.sh
+```
 
-Success: you see backend, frontend, and deploy. The last command removes Windows line endings from the script.
+## 4. Configure environment files
 
-## 5. Create production settings
+For initial setup only, on the droplet:
 
-**Droplet:**
-
-~~~sh
+```sh
 install -d -m 0750 /etc/vendorops
 cp /opt/vendorops/app/deploy/backend.env.example /etc/vendorops/backend.env
 cp /opt/vendorops/app/deploy/frontend.env.example /etc/vendorops/frontend.env
-chmod 600 /etc/vendorops/backend.env /etc/vendorops/frontend.env
+chmod 600 /etc/vendorops/*.env
 python3 -c 'import secrets; print(secrets.token_urlsafe(64))'
-~~~
-
-Copy the random text Python prints. This is your secret key. Keep it private and retain it for future deployments.
-
-~~~sh
 nano /etc/vendorops/backend.env
-~~~
+```
 
-Edit these lines using your generated key and actual domain:
+For an existing deployment, edit the existing files instead of copying templates over them. Keep your existing SECRET_KEY and SMTP settings. Remove obsolete DATABASE_PATH and add:
 
-~~~dotenv
-SECRET_KEY=PASTE_YOUR_GENERATED_SECRET_HERE
-DEBUG=false
-ALLOWED_HOSTS=127.0.0.1,localhost,ops.yourdomain.com
-CSRF_TRUSTED_ORIGINS=https://ops.yourdomain.com
-DATABASE_PATH=/var/lib/vendorops/db.sqlite3
-TRUST_PROXY=true
-SECURE_SSL_REDIRECT=false
-~~~
+```dotenv
+DB_NAME=tgf_vendor_ops
+DB_USER=vendorops
+DB_PASSWORD="YOUR_POSTGRESQL_PASSWORD"
+DB_HOST=127.0.0.1
+DB_PORT=5432
+```
 
-Keep the SMTP lines. For email delivery, fill in your email provider's host, username, password, sender, port and TLS settings. With an empty SMTP host, email sending is unavailable. Quote values containing spaces. Do not commit these files or share passwords in chat.
+Use your actual database/role names if different. These are systemd environment files: quote special values appropriately; do not use shell variable substitutions. Do not commit the files. Keep DEBUG=false, a random SECRET_KEY of at least 50 characters, your public hostname in ALLOWED_HOSTS, and its HTTPS URL in CSRF_TRUSTED_ORIGINS.
 
-Save with **Ctrl+O**, **Enter**, then **Ctrl+X**.
+Edit frontend.env:
 
-~~~sh
-nano /etc/vendorops/frontend.env
-~~~
-
-Use:
-
-~~~dotenv
+```dotenv
 NODE_ENV=production
 HOST=127.0.0.1
 PORT=3000
-ORIGIN=https://ops.yourdomain.com
+ORIGIN=https://app.example.com
 DJANGO_API_URL=http://127.0.0.1:8000
-~~~
+```
 
-Use your real HTTPS hostname for ORIGIN, without a trailing slash. Keep the internal API URL as shown. Save and exit.
+In nano, Ctrl+O then Enter saves; Ctrl+X exits.
 
-## 6. Build and start the app
+## 5. Migrate, build and start
 
-**Droplet:**
+Droplet:
 
-~~~sh
+```sh
 bash /opt/vendorops/app/deploy/install.sh
-~~~
+```
 
-This may take several minutes. It installs dependencies, checks and builds the frontend, creates database tables, collects static files, and starts services. Later runs back up the existing production database before migrations.
+The installer installs dependencies, checks/builds the frontend, backs up PostgreSQL, runs Django migrate --noinput with production credentials, collects static files, and starts systemd services. Backup/migration/build failures stop deployment. Even on first deployment, create the empty database first so the backup and migrations can connect.
 
-Success: both services show active (running). Check:
+Unit/integration tests run against GitHub's disposable PostgreSQL service before deployment. They do not run against the production database. The CI role can create Django's test database; the production role need not.
 
-~~~sh
+Verify:
+
+```sh
 systemctl is-active vendorops-backend vendorops-frontend
 curl -I http://127.0.0.1:3000/login
-~~~
+```
 
-Expect two active lines and an HTTP response from the login page. If pip cannot find a pinned package version, stop and have the requirements checked against available releases. Resolve any frontend check/build errors before proceeding.
+## 6. Nginx, DNS and HTTPS
 
-## 7. Configure Nginx
+Point your domain's A record to the droplet. Correct any AAAA record. If using Cloudflare, start with DNS only. On Windows, Resolve-DnsName app.example.com -Type A should return the droplet IP.
 
-**Droplet:**
+For initial Nginx setup, on the droplet:
 
-~~~sh
-ls -l /etc/nginx/sites-enabled
+```sh
 cp /opt/vendorops/app/deploy/nginx.conf /etc/nginx/sites-available/vendorops
 nano /etc/nginx/sites-available/vendorops
-~~~
+```
 
-Change the server_name line to your real domain:
+Replace server_name app.example.com with your domain. Preserve other sites and resolve duplicate hostnames. Then:
 
-~~~nginx
-server_name ops.yourdomain.com;
-~~~
-
-Save and exit, then:
-
-~~~sh
+```sh
 ln -s /etc/nginx/sites-available/vendorops /etc/nginx/sites-enabled/vendorops
 nginx -t
 systemctl reload nginx
-~~~
-
-Skip ln if the link already exists. Resolve another enabled site using the same hostname first. The default Ubuntu site can coexist with this named site.
-
-Success: Nginx says syntax OK and configuration test successful. Do not reload a failing configuration.
-
-## 8. Check firewalls
-
-**Droplet:**
-
-~~~sh
-ufw status
-~~~
-
-If UFW is active:
-
-~~~sh
-ufw allow OpenSSH
-ufw allow 'Nginx Full'
-ufw status
-~~~
-
-If inactive, these commands can prepare rules, but this guide does not enable it automatically. Preserve rules needed by other services. Always allow SSH before enabling a firewall.
-
-If a DigitalOcean Cloud Firewall is attached, allow inbound TCP **80** and **443** from the internet, and **22** from your own IP for SSH. Keep ports **3000** and **8000** private.
-
-Open http://ops.yourdomain.com/login. You should see the page. Wait for HTTPS before signing in: production cookies require HTTPS.
-
-## 9. Enable HTTPS
-
-**Droplet:**
-
-~~~sh
-certbot --nginx -d ops.yourdomain.com --redirect
-~~~
-
-Enter an email for certificate notices and accept the terms when prompted. Certbot installs the certificate and configures HTTP to redirect to HTTPS.
-
-~~~sh
-nginx -t
-curl -I https://ops.yourdomain.com/login
+certbot --nginx -d app.example.com --redirect
 certbot renew --dry-run
-~~~
+```
 
-Success: HTTPS works, your browser shows a secure connection, and renewal testing succeeds. If issuance fails, check public DNS, any AAAA record, and inbound ports 80/443.
+Skip the link command if it exists. Do not reload invalid Nginx configuration. For an existing HTTPS deployment, preserve the active Certbot-managed config instead of copying the template again.
 
-## 10. Create your login account
+Allow inbound 80/443 and preserve SSH access in UFW/DigitalOcean firewalls. Leave 3000, 8000 and 5432 private. Production login cookies require HTTPS.
 
-**Droplet:**
+## 7. Create an administrator
 
-~~~sh
+Droplet:
+
+```sh
 systemd-run --pty --wait --collect --uid=vendorops --gid=vendorops \
   --property=WorkingDirectory=/opt/vendorops/app/backend \
   --property=EnvironmentFile=/etc/vendorops/backend.env \
   /opt/vendorops/venv/bin/python manage.py createsuperuser
-~~~
+```
 
-Enter your username, email, and password. Password characters do not appear while typing; this is normal.
+Sign in at https://app.example.com/login and test a vendor page and form submission.
 
-Sign in at https://ops.yourdomain.com/login. Django admin is at https://ops.yourdomain.com/admin/. Check a vendor page, create a test record, and submit a form. If SMTP is configured, test an email action with an address you control.
+## Existing SQLite data
 
-## Optional: import your local data
+Changing DB settings does not transfer SQLite records into PostgreSQL. Preserve a copy of the old database. Plan a controlled export/import with matching code versions, paused writes, and verified record counts/relationships. Do not copy a .sqlite3 file into PostgreSQL or assume migrate imports existing data. Resolve the data migration before switching a live app with SQLite data.
 
-Skip this for an empty database. Importing replaces server data and includes existing accounts. Do it before people start using the deployed app.
+## Backups and recovery
 
-Stop local Django. **Windows PowerShell, from the project root:**
+The installer and CI deployment now produce custom-format .dump files from the database in Django's settings. Passwords are passed to pg_dump through its environment, not command arguments. A failed backup stops deployment; existing backup files are never overwritten.
 
-~~~powershell
-@'
-import sqlite3
-source = sqlite3.connect('backend/db.sqlite3')
-destination = sqlite3.connect('backend/db-upload.sqlite3')
-source.backup(destination)
-destination.close()
-source.close()
-'@ | .\backend\.venv\Scripts\python.exe -
-scp .\backend\db-upload.sqlite3 root@162.243.224.95:/root/vendorops-db-upload.sqlite3
-~~~
+For a manual backup, on the droplet:
 
-Adjust the Python path if your virtual environment is elsewhere. This file contains private data.
-
-**Droplet, after initial deployment:**
-
-~~~sh
-systemctl stop vendorops-frontend vendorops-backend
+```sh
 install -d -m 0700 /var/backups/vendorops
-sqlite3 /var/lib/vendorops/db.sqlite3 ".backup '/var/backups/vendorops/before-import-$(date -u +%Y%m%dT%H%M%SZ).sqlite3'"
-sqlite3 /var/lib/vendorops/db.sqlite3 'PRAGMA wal_checkpoint(TRUNCATE);'
-install -o vendorops -g vendorops -m 0640 /root/vendorops-db-upload.sqlite3 /var/lib/vendorops/db.sqlite3
-bash /opt/vendorops/app/deploy/install.sh
-~~~
+systemd-run --quiet --wait --pipe --collect \
+  --property=WorkingDirectory=/opt/vendorops/app/backend \
+  --property=EnvironmentFile=/etc/vendorops/backend.env \
+  /opt/vendorops/venv/bin/python manage.py backup_database "/var/backups/vendorops/manual-$(date -u +%Y%m%dT%H%M%SZ).dump"
+```
 
-Stop if any command fails, before replacing data. Keep services stopped during import. The installer applies missing migrations and starts services again. Sign in using an existing local account.
+For daily backups, place the following in /etc/cron.daily/vendorops-backup and chmod 700 that file:
 
-## Deploy future changes
-
-This causes brief downtime. Take a DigitalOcean snapshot before updating if you need a full recovery point.
-
-**Droplet:**
-
-~~~sh
-systemctl stop vendorops-frontend vendorops-backend
-install -d -m 0700 /var/backups/vendorops
-sqlite3 /var/lib/vendorops/db.sqlite3 ".backup '/var/backups/vendorops/before-update-$(date -u +%Y%m%dT%H%M%SZ).sqlite3'"
-tar -czf "/var/backups/vendorops/source-$(date -u +%Y%m%dT%H%M%SZ).tar.gz" -C /opt/vendorops app
-~~~
-
-Repeat **step 4** to upload and extract updated source, then:
-
-~~~sh
-bash /opt/vendorops/app/deploy/install.sh
-curl -I https://ops.yourdomain.com/login
-~~~
-
-Do not repeat step 5: it overwrites settings. Do not overwrite the active Nginx config with the template after Certbot adds HTTPS. Extraction overwrites matching files but does not remove deleted files; review and remove specific obsolete files when an update requires it.
-
-If an update fails, services may remain stopped. Inspect the error. Restoring old code alone may not undo migrations; rollback can require the matching database backup.
-
-## Daily database backups
-
-The installer backs up only before migrations. To add daily backups, **on the droplet**:
-
-~~~sh
-install -d -m 0700 /var/backups/vendorops
-nano /etc/cron.daily/vendorops-backup
-~~~
-
-Paste:
-
-~~~sh
+```sh
 #!/bin/sh
 set -eu
 umask 077
-sqlite3 /var/lib/vendorops/db.sqlite3 ".backup '/var/backups/vendorops/daily-$(date -u +%Y%m%dT%H%M%SZ).sqlite3'"
-~~~
+systemd-run --quiet --wait --pipe --collect --property=WorkingDirectory=/opt/vendorops/app/backend --property=EnvironmentFile=/etc/vendorops/backend.env /opt/vendorops/venv/bin/python manage.py backup_database "/var/backups/vendorops/daily-$(date -u +%Y%m%dT%H%M%SZ).dump"
+```
 
-Save, exit, and test:
+Run it once manually to verify. Copy backups off the droplet using scp, monitor disk space, and periodically test recovery into a separate database. pg_dump stores database contents/schema, not cluster roles; provision the destination role separately.
 
-~~~sh
-chmod 700 /etc/cron.daily/vendorops-backup
-/etc/cron.daily/vendorops-backup
-ls -lh /var/backups/vendorops
-~~~
+To test restoration into a new, empty recovery database owned by vendorops:
 
-Copy backups off the droplet regularly. **Windows PowerShell:**
+```sh
+sudo -u postgres createdb --owner=vendorops vendorops_recovery
+pg_restore -h 127.0.0.1 -p 5432 -U vendorops -W --no-owner --no-acl --exit-on-error -d vendorops_recovery /var/backups/vendorops/YOUR_BACKUP.dump
+```
 
-~~~powershell
-New-Item -ItemType Directory -Force "$env:USERPROFILE\Documents\vendorops-backups"
-scp root@162.243.224.95:/var/backups/vendorops/EXACT_BACKUP_FILENAME.sqlite3 "$env:USERPROFILE\Documents\vendorops-backups\"
-~~~
+Replace the filename. This does not modify the live database. For a real rollback, stop application writes and restore a matching database/source version; do not automatically restore old data after failed migrations.
 
-Use an exact filename from ls. Backups contain private data. This example keeps backups until you remove old ones: monitor space with df -h. Periodically restore a backup into a separate test environment to verify it.
+## Updates and troubleshooting
 
-## Troubleshooting
+Use GitHub Actions as described in GITHUB_ACTIONS.md. Manual updates require backing up source/data, stopping services, uploading updated source and rerunning install.sh. Preserve production environment files and Nginx configuration.
 
-**Droplet — service status and logs:**
-
-~~~sh
-systemctl status vendorops-backend vendorops-frontend --no-pager
+```sh
 journalctl -u vendorops-backend -u vendorops-frontend -n 100 --no-pager
-tail -n 50 /var/log/nginx/error.log
-~~~
+pg_isready -h 127.0.0.1 -p 5432
+systemctl status postgresql --no-pager
+```
 
-| Problem | Check |
-| --- | --- |
-| SSH publickey error | Correct user, key path, and public key in authorized_keys |
-| 502 Bad Gateway | Service status/logs; try curl -I http://127.0.0.1:3000/login |
-| Nginx welcome page | DNS, server_name and enabled-site link; visit domain rather than IP |
-| Login or form origin error | HTTPS; frontend ORIGIN matches browser URL; backend hosts and trusted origins match |
-| Certificate failure | Public DNS, incorrect AAAA record, inbound ports 80/443 |
-| Email failure | SMTP credentials, verified sender, logs, DigitalOcean outbound SMTP restrictions |
+Connection refused: check PostgreSQL and its loopback listener. Authentication failed: check role/password and pg_hba.conf. Migration permission denied: verify database/schema ownership. pg_dump missing: install postgresql-client matching the server. Deployment stops before restart if an existing application check/test fails; inspect that failure separately.
 
-After editing environment settings:
-
-~~~sh
-systemctl restart vendorops-backend vendorops-frontend
-~~~
-
-| Path | Purpose |
-| --- | --- |
-| /opt/vendorops/app | Source and build |
-| /opt/vendorops/venv | Python dependencies |
-| /etc/vendorops/backend.env | Backend settings and SMTP secrets |
-| /etc/vendorops/frontend.env | Site URL and internal API URL |
-| /var/lib/vendorops/db.sqlite3 | Production database |
-| /var/backups/vendorops | Backups |
-| /etc/nginx/sites-available/vendorops | Active Nginx configuration |
-
-## References
-
-- [NodeSource installation documentation](https://github.com/nodesource/distributions/blob/master/DEV_README.md)
-- [SvelteKit Node adapter settings](https://svelte.dev/docs/kit/adapter-node)
-- [Certbot documentation](https://eff-certbot.readthedocs.io/en/stable/using.html)
+References: [GitHub PostgreSQL services](https://docs.github.com/en/actions/tutorials/use-containerized-services/create-postgresql-service-containers), [PostgreSQL pg_dump](https://www.postgresql.org/docs/current/app-pgdump.html).

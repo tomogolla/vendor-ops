@@ -7,6 +7,7 @@ test -f /etc/vendorops/frontend.env
 command -v node
 command -v npm
 python3 --version
+command -v pg_dump
 id vendorops >/dev/null 2>&1 || useradd --system --home /var/lib/vendorops --shell /usr/sbin/nologin vendorops
 install -d -o vendorops -g vendorops -m 0750 /var/lib/vendorops
 chown root:vendorops /etc/vendorops/*.env
@@ -18,11 +19,9 @@ npm ci
 npm run check
 npm run build
 cd /opt/vendorops/app
-# Back up the production database before migrations, including WAL contents.
-if test -f /var/lib/vendorops/db.sqlite3; then
-    install -d -m 0700 /var/backups/vendorops
-    sqlite3 /var/lib/vendorops/db.sqlite3 ".backup '/var/backups/vendorops/db-$(date -u +%Y%m%dT%H%M%SZ).sqlite3'"
-fi
+# Back up the actual PostgreSQL database using Django's production connection settings.
+install -d -m 0700 /var/backups/vendorops
+systemd-run --quiet --wait --pipe --collect --property=WorkingDirectory=/opt/vendorops/app/backend --property=EnvironmentFile=/etc/vendorops/backend.env /opt/vendorops/venv/bin/python manage.py backup_database "/var/backups/vendorops/db-$(date -u +%Y%m%dT%H%M%SZ)-$$.dump"
 systemd-run --quiet --wait --pipe --collect --uid=vendorops --gid=vendorops --property=WorkingDirectory=/opt/vendorops/app/backend --property=EnvironmentFile=/etc/vendorops/backend.env /opt/vendorops/venv/bin/python manage.py migrate --noinput
 systemd-run --quiet --wait --pipe --collect --property=WorkingDirectory=/opt/vendorops/app/backend --property=EnvironmentFile=/etc/vendorops/backend.env /opt/vendorops/venv/bin/python manage.py collectstatic --noinput
 install -m 0644 deploy/vendorops-backend.service deploy/vendorops-frontend.service /etc/systemd/system/

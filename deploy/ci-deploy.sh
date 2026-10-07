@@ -13,14 +13,14 @@ test -f "$incoming/deploy/install.sh"
 test -d /opt/vendorops/app
 test -f /etc/vendorops/backend.env
 test -f /etc/vendorops/frontend.env
-test -f /var/lib/vendorops/db.sqlite3
+command -v pg_dump
 backup_dir="/var/backups/vendorops/$(date -u +%Y%m%dT%H%M%SZ)-$release_sha"
 install -d -m 0700 "$backup_dir"
 # Save source before stopping services, then take a consistent data backup.
 tar -czf "$backup_dir/source.tar.gz" -C /opt/vendorops app
 systemctl stop vendorops-frontend vendorops-backend
 trap 'echo "Deployment failed. Services may be stopped. Inspect logs and backups at: $backup_dir. Do not restore old code without checking migrations." >&2' ERR
-sqlite3 /var/lib/vendorops/db.sqlite3 ".backup '$backup_dir/db.sqlite3'"
+systemd-run --quiet --wait --pipe --collect --property=WorkingDirectory="$incoming/backend" --property=EnvironmentFile=/etc/vendorops/backend.env /opt/vendorops/venv/bin/python manage.py backup_database "$backup_dir/db.dump"
 # Preserve the previous tree rather than overwriting it. This removes stale source files.
 mv /opt/vendorops/app "$backup_dir/previous-app"
 mv "$incoming" /opt/vendorops/app
